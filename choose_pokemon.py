@@ -9,8 +9,9 @@ To run::
 import json
 import os
 import random
+from collections import defaultdict
 from math import floor, sqrt
-from typing import Dict, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 from PIL import Image
 
@@ -34,6 +35,22 @@ def load_pokemon_file() -> dict:
         }
 
     return pokemon_dict
+
+
+def load_pokemon_effectiveness() -> dict:
+    """Load pokemon type effectiveness from the ``effectiveness.json`` file in
+    the same folder.
+
+    Returns:
+        dict: Pokemon type effectiveness
+    """
+    fpath = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "effectiveness.json"
+    )
+    with open(fpath) as f:
+        type_effectiveness = json.load(f)
+
+    return type_effectiveness
 
 
 def calculate_pogo_stats(
@@ -93,7 +110,39 @@ def calculate_pogo_stats(
     return pogo_attack - max_iv, pogo_defense - max_iv, pogo_hp - max_iv, pogo_cp
 
 
-def choose_pokemon(pokemon_dict: dict) -> Tuple[int, dict, dict]:
+def calculate_pogo_typing(types: List[str], type_effectiveness: dict) -> Dict[str, int]:
+    """Calculate type effectivenes in Pokemon Go.
+
+    Args:
+        types (List[str]): Types of the pokemon
+        type_effectiveness (dict): dict containing the type effectiveness of all
+            pokemons.
+
+    Returns:
+        Dict[str, int]: A dict for the type effectiveness. Positive value indicates
+            super effective; negative values indicates not very effective.
+    """
+    effective_dict = defaultdict(int)
+
+    for pogo_type in types:
+        for k, v in type_effectiveness["super effective"].items():
+            if pogo_type in v:
+                effective_dict[k] += 1
+
+        for k, v in type_effectiveness["not very effective"].items():
+            if pogo_type in v:
+                effective_dict[k] -= 1
+
+        for k, v in type_effectiveness["no effect"].items():
+            if pogo_type in v:
+                effective_dict[k] -= 2
+
+    return sorted(effective_dict.items(), key=lambda item: item[1], reverse=True)
+
+
+def choose_pokemon(
+    pokemon_dict: dict, type_effectiveness: dict
+) -> Tuple[int, dict, dict]:
     """Randomly choose a pokemon and return its attributes.
 
     The attributes we return include:
@@ -115,17 +164,24 @@ def choose_pokemon(pokemon_dict: dict) -> Tuple[int, dict, dict]:
     pokemon = pokemon_dict[pokemon_idx]
     pokemon_stats_list = calculate_pogo_stats(pokemon_base=pokemon["base"])
     pokemon_stats = dict(zip(["ATK", "DEF", "STA", "CP"], pokemon_stats_list))
-    return pokemon_idx, pokemon, pokemon_stats
+    pokemon_effectiveness = calculate_pogo_typing(
+        types=pokemon["type"], type_effectiveness=type_effectiveness
+    )
+    return pokemon_idx, pokemon, pokemon_stats, pokemon_effectiveness
 
 
 if __name__ == "__main__":
     pokemons = load_pokemon_file()
-    pokemon_idx, pokemon, pokemon_stats = choose_pokemon(pokemon_dict=pokemons)
+    effectiveness = load_pokemon_effectiveness()
+    pokemon_idx, pokemon, pokemon_stats, pokemon_effectiveness = choose_pokemon(
+        pokemon_dict=pokemons, type_effectiveness=effectiveness
+    )
     print(
         f"index: {pokemon_idx}\n"
         f'name: {pokemon["name"]}\n'
+        f"stats: {pokemon_stats}\n"
         f'type: {pokemon["type"]}\n'
-        f"stats: {pokemon_stats}"
+        f"type effectiveness: {pokemon_effectiveness}"
     )
     image = Image.open(os.path.join("images", f"{str(pokemon_idx).zfill(3)}.png"))
     image.show()
